@@ -7,110 +7,82 @@
 #include <string.h>
 #include <unistd.h>
 #include <iostream>
-
 #include <string>
-
 #include <thread>
-
 using namespace std;
-string buffer;
-string input;
 
-void threadReadSocket(int client_socket){ 
-    char local_buffer[1000];
-    do{
-        read(client_socket,local_buffer,255);
-        cout<<local_buffer;
-    }while(1);
+void threadReadSocket(int client_socket) {
+    char local_buffer[256];
+    int n;
+
+    do {
+        memset(local_buffer, 0, sizeof(local_buffer));
+        n = read(client_socket, local_buffer, 255);
+        if (n > 0) {
+            cout << local_buffer;
+            cout.flush();
+        }
+    } while (1);
 }
-//{}
-int main(void){
-  struct sockaddr_in stSockAddr;
-  int FDclient = socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
-  int n;
-  int res;
-  char buffer[256];
-  char dest[124];
-  char msg[124];
-  if(FDclient ==-1){
-      perror("error");
-      exit(EXIT_FAILURE);
-  }
-  
-  stSockAddr.sin_family = AF_INET;
-  stSockAddr.sin_port = htons(1101);
-  res = inet_pton(AF_INET,"172.16.18.187",&stSockAddr.sin_addr);
-  
-  if(res == -1){
-      perror("error en el primer parametro");
-      close(FDclient);
-      exit(EXIT_FAILURE);
-  }
-  else if (res == 0){
-      perror("error en el segundo parametro");
-      close(FDclient);
-      exit(EXIT_FAILURE);
-  }    
 
-  if(-1 == connect(FDclient, (const struct sockaddr*)&stSockAddr,sizeof(struct sockaddr_in))){
-      perror("error en conexion");
-      close(FDclient);
-      exit(EXIT_FAILURE);
-  }
-  thread (threadReadSocket);
-  do {
-    cin>>input;
-    write(FDclient,input.c_str(),input.size());
-  }while (1);
-  
-  for(;;){
-      printf("Msg to: ");
-      scanf("%123s", dest);
-      printf("Msg: ");
-      scanf("%123s", msg);
+int main(void)
+{
+    struct sockaddr_in stSockAddr;
+    int Res;
+    int SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-      int dest_len = strlen(dest);
-      int msg_len = strlen(msg);
+    if (-1 == SocketFD)
+    {
+        perror("cannot create socket");
+        exit(EXIT_FAILURE);
+    }
 
-      int offset = 0;
+    memset(&stSockAddr, 0, sizeof(struct sockaddr_in));
 
-      snprintf(buffer + offset, 4, "%03d", dest_len);
-      offset += 3;
+    stSockAddr.sin_family = AF_INET;
+    stSockAddr.sin_port = htons(1100);
+    Res = inet_pton(AF_INET, "172.31.215.158", &stSockAddr.sin_addr);
 
-      memcpy(buffer + offset, dest, dest_len);
-      offset += dest_len;
+    if (0 > Res)
+    {
+        perror("error: first parameter is not a valid address family");
+        close(SocketFD);
+        exit(EXIT_FAILURE);
+    }
+    else if (0 == Res)
+    {
+        perror("char string (second parameter does not contain valid ipaddress)");
+        close(SocketFD);
+        exit(EXIT_FAILURE);
+    }
 
-      sprintf(buffer + offset, "%03d", msg_len);
-      offset += 3;
+    if (-1 == connect(SocketFD, (const struct sockaddr *)&stSockAddr, sizeof(struct sockaddr_in)))
+    {
+        perror("connect failed");
+        close(SocketFD);
+        exit(EXIT_FAILURE);
+    }
 
-      memcpy(buffer + offset, msg, msg_len);
-      offset += msg_len;
+    // Ask for nickname and send it first
+    string nickname;
+    cout << "Enter your nickname: ";
+    cin >> nickname;
+    write(SocketFD, nickname.c_str(), nickname.size());
 
-      n = write(FDclient,buffer,offset);
-      if(n == -1){
-          perror("error al enviar");
-          break;
-      }
+    // Start thread to read incoming messages
+    thread t(threadReadSocket, SocketFD);
+    t.detach();
 
-      n = read(FDclient,buffer,3);
-      buffer[n] = '\0';
-      int l = atoi(buffer);
-      n = read(FDclient,buffer,l);
-      buffer[n] = '\0';
-      char nickname[n+1];
-      strcpy(nickname,buffer);
-      printf("Msg from: [%s]\n",nickname);
-      n = read(FDclient,buffer,3);
-      buffer[n] = '\0';
-      int ll = atoi(buffer);
-      n=read(FDclient,buffer,ll);
-      buffer[n] = '\0';
-      char msg[n+1];
-      strcpy(msg,buffer);
-      printf("Msg: [%s]\n",msg);
-  }
-  shutdown(FDclient,SHUT_RDWR);
-  close(FDclient);
-  return 0;
+    // Main loop: read from stdin and send to server
+    string input;
+    do {
+        cin >> input;
+        if (!input.empty()) {
+            write(SocketFD, input.c_str(), input.size());
+        }
+    } while (1);
 
+    shutdown(SocketFD, SHUT_RDWR);
+    close(SocketFD);
+    return 0;
 }
